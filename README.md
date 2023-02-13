@@ -13,4 +13,7 @@ Let's briefly discuss the 3 steps:
     * NFS storage provisioner
     * cert-manager
     * metrics-server
-* **SAS Viya**. 
+* **SAS Viya**. We'll deploy SAS Viya using the "manual" approach where you will prepare and submit the YAML manifest which triggers the software installation process. For this you will need to become familiar with the `kustomize` tool (https://kustomize.io/). `kustomize` allows you to take the manifest templates shipped by SAS and merge them with site-specific input which you have to provide.
+
+## Create the AWS cloud infrastructure
+
