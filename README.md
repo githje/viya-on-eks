@@ -296,6 +296,9 @@ This concludes the 1st step. We'll now deploy some required 3rd-party packages.
 
 ## 2. Deploy required infrastructure components
 
+
+### nginx ingress controller
+
 SAS Viya requires the nginx ingress controller (https://github.com/kubernetes/ingress-nginx), which is not installed yet. We'll install it using helm.
 
 ```shell
@@ -334,7 +337,45 @@ curl -k https://$ELB_DNS
 (Optional) Deploy a simple web application to test web-based access to the cluster
 
 ```shell
-cat 
+sed -i "s|{{ INGRESS_DNS }}|$ELB_DNS|" ~/environment/viya-on-eks/assets/test-deploy-http-webserver.yaml | \
+
+kubectl -n default apply -f ~/environment/viya-on-eks/assets/test-deploy-http-webserver.yaml
+
+# wait until the pod is "running"
+kubectl -n default get all
+
+# checl
+echo "Point your browser to: http://$ELB_DNS/echoserver"
+```
+
+Your browser should show a simple web page with some information about the HTTP request:
+
+```
+Hostname: echoserver-699997586b-68vdv
+
+Pod Information:
+	-no pod information available-
+
+Server values:
+	server_version=nginx: 1.12.2 - lua: 10010
+
+(...)
+```
+
+This validates that the nginx ingress controller has been successfully deployed.
+
+
+### metrics-server
+
+Metrics Server is a scalable, efficient source of container resource metrics for Kubernetes. It provides information to the Horizontal Pod Autoscaler (HPA).
+
+See: https://github.com/kubernetes-sigs/metrics-server
+
+```shell
+kubectl apply -f ~/environment/viya-on-eks/assets/metrics-server-0.6.2.yaml
+
+# test (repeat this command until the pod has started (~30 secs))
+kubectl get --raw /apis/metrics.k8s.io/v1beta1/nodes/ | jq .
 ```
 
 
