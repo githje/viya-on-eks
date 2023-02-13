@@ -8,11 +8,13 @@ Let's briefly discuss the 3 steps:
     * an EKS cluster
     * a virtual machine running a NFS service (as a shared storage provider for SAS Viya)
     * and of course all the "glue" components required for this to work (networking, roles etc.)
+
 * **Required packages**. SAS Viya requires some additional components to be able to run on Kubernetes. We'll need to deploy them before we can continue. We will install these components:
     * nginx ingress controller
     * NFS storage provisioner
-    * cert-manager
     * metrics-server
+    * LDAP server
+
 * **SAS Viya**. We'll deploy SAS Viya using the "manual" approach where you will prepare and submit the YAML manifest which triggers the software installation process. For this you will need to become familiar with the `kustomize` tool (https://kustomize.io/). `kustomize` allows you to take the manifest templates shipped by SAS and merge them with site-specific input which you have to provide.
 
 
@@ -377,6 +379,79 @@ kubectl apply -f ~/environment/viya-on-eks/assets/metrics-server-0.6.2.yaml
 # test (repeat this command until the pod has started (~30 secs))
 kubectl get --raw /apis/metrics.k8s.io/v1beta1/nodes/ | jq .
 ```
+
+
+### NFS storage provisioner
+
+Some services in SAS Viya require RWX storage ("ReadWriteMany") to store configuration data. Shared storage is quite often also used for keeping user data, but it is a system requirement for the deployment as well. The cloud infrastructure setup has created a virtual machine to act as a NFS server. We now need to deploy the storage driver to Kubernetes to access it.
+
+See: https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner
+
+```shell
+cd ~/environment
+git clone https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner.git
+
+cd nfs-subdir-external-provisioner/
+
+NFS_SERVER_IP=$(cat ~/environment/iac-deploy/deployments/aws/latest/iac/terraform.tfstate | \
+    jq -r .outputs.nfs_private_ip.value)
+echo "NFS Server IP addreess: $NFS_SERVER_IP"
+
+sed -i "s/namespace:.*/namespace: nfs/g" ./deploy/rbac.yaml ./deploy/deployment.yaml
+sed -i "s|/ifs/kubernetes|/nfsshare|g" deploy/deployment.yaml
+sed -i "s|10.3.243.101|$NFS_SERVER_IP|g" deploy/deployment.yaml
+sed -i 's|nfs-client|nfs-shared-storage|' deploy/class.yaml
+
+kubectl create ns nfs
+kubectl apply -f deploy/rbac.yaml
+kubectl apply -f deploy/class.yaml
+kubectl apply -f deploy/deployment.yaml
+
+# check (nfs-shared-storage)
+kubectl get sc
+```
+
+
+### LDAP server
+
+SAS Viya relies on external services for user authentication. This is often delegated to an Active Directory server, but a simple LDAP server with some local users will be sufficient for this workshop. We will deploy the LDAP server as a pod running on EKS.
+
+```shell
+cd ~
+unzip openldap.zip
+mv 2021-deploy-openldap/* .
+rm -rf 2021-deploy-openldap/
+
+cd openldap
+
+kustomize build ./no_TLS/ -o site.yaml
+kubectl apply -f site.yaml
+
+# check (repeat command until pod is running)
+kubectl get all -l "app=viya4-openldap-server"
+```
+
+The output of the last command should look like this:
+
+```
+NAME                                         READY   STATUS    RESTARTS   AGE
+pod/viya4-openldap-server-779b48868d-f6vm7   1/1     Running   0          87s
+
+NAME                                               DESIRED   CURRENT   READY   AGE
+replicaset.apps/viya4-openldap-server-779b48868d   1         1         1       87s
+```
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 ## 3. Deploy SAS Viya
