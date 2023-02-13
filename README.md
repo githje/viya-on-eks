@@ -334,7 +334,7 @@ curl -k https://$ELB_DNS
 (Optional) Deploy a simple web application to test web-based access to the cluster
 
 ```shell
-
+cat 
 ```
 
 
