@@ -78,9 +78,172 @@ You should now see a new folder named "viya-on-eks" in the file explorer on the 
 
 ## Create the AWS cloud infrastructure
 
-```shell
-git clone https://github.com/sassoftware/viya4-iac-aws.git --branch 5.4.0
+### Prepare building the Terraform plan file
 
+The SAS-provided IaC ("infrastructure-as-code") scripts use a local Docker container to prepare and run the Terraform scripts. First, let's clone the IaC repository.
+
+```shell
+# switch to this folder because it is shown in the file explorer panel
+cd ~/environment/
+
+git clone https://github.com/sassoftware/viya4-iac-aws.git --branch 5.4.0
 cd viya4-iac-aws/
+```
+
+Now create the Docker container which we'll use to run the cloud infrastructure deployment script.
+
+```shell
+docker build . -t viya4-iac-aws:5.4.0
+
+# verify that the container has been built successfully
+docker images
+```
+
+You should see this output (note the first entry).
 
 ```
+REPOSITORY            TAG       IMAGE ID       CREATED         SIZE
+viya4-iac-aws         5.4.0     4a9fa50ad084   6 seconds ago   1.39GB
+mikefarah/yq          latest    290cefa2b7ae   4 weeks ago     19.8MB
+amazon/aws-cli        2.7.22    e0804ed12ef7   6 months ago    374MB
+hashicorp/terraform   1.0.0     3ecccf079b62   20 months ago   106MB
+```
+
+The viya4-iac-aws container will be used twice: to create the Terraform plan file and to execute this plan. We need to set a few configuration parameters to make the plan suitable for this workshop.
+
+```shell
+# some variables for building names etc.
+export iac_tag=5.4.0
+export deployment_tag=6.1.0
+export backup_date=$(date +%s)
+export cloudprovider=aws
+
+# create the project folders containing our customizations
+mkdir -p /home/ec2-user/environment/iac-deploy
+export IACHOMEDIR=/home/ec2-user/environment/iac-deploy
+
+mkdir -p $IACHOMEDIR/deployments/$cloudprovider/old
+mv $IACHOMEDIR/deployments/$cloudprovider/latest/ $IACHOMEDIR/deployments/$cloudprovider/old/$backup_date/
+mkdir -p $IACHOMEDIR/deployments/$cloudprovider/latest/deploy
+mkdir -p $IACHOMEDIR/deployments/$cloudprovider/latest/iac
+
+export iac_dir=$IACHOMEDIR/deployments/$cloudprovider/latest/iac
+export deploy_dir=$IACHOMEDIR/deployments/$cloudprovider/latest/deploy
+```
+
+By now you should have received a file containing some extra AWS credentials. We need to add this information to the plan file. The XML file containing the AWS credentials will look like this:
+
+```json
+{
+    "AccessKey": {
+        "UserName": "devops-iac",
+        "AccessKeyId": "AAABBBCCC111222333",
+        "Status": "Active",
+        "SecretAccessKey": "abcdefgh12345",
+        "CreateDate": "2023-02-12T21:41:11+00:00"
+    }
+}
+```
+
+We're interested in the `AccessKeyId` and `SecretAccessKey` values. Copy them into the following shell variables:
+
+```shell
+# do NOT copy&paste!
+export APPID=AAABBBCCC111222333
+export PASSWORD=abcdefgh12345
+```
+
+Create the credentials file needed by Terraform.
+
+```shell
+if [ ! -z $IACHOMEDIR/deployments/$cloudprovider/latest/.${cloudprovider}_docker_creds.env ]; then
+echo "[INFO:] Creating credentials file"
+cat << EOF > $IACHOMEDIR/deployments/$cloudprovider/latest/.${cloudprovider}_docker_creds.env
+ TF_VAR_aws_access_key_id=$APPID
+ TF_VAR_aws_secret_access_key=$PASSWORD
+EOF
+else
+ echo "[INFO:] File already exists. Nothing to do"
+fi
+
+# verify that the information looks correct
+cat $IACHOMEDIR/deployments/$cloudprovider/latest/.${cloudprovider}_docker_creds.env
+```
+
+More variables describing the cloud infrastructure.
+
+```shell
+export location=us-east-1
+export prefix=sas-viya-aws
+export tag='"user" = "sas"'
+export postgres=internal
+export registry=no
+```
+
+Finalizing the Terraform TFVARS file.
+
+```shell
+# using this template
+curl https://raw.githubusercontent.com/sassoftware/viya4-iac-$cloudprovider/main/examples/sample-input.tfvars -o $iac_dir/sas-sample-input.tfvars
+
+IP=$(dig @resolver1.opendns.com ANY myip.opendns.com +short)
+CIDR=$(echo ${IP}/32 | sed 's/^/"/;s/$/"/')
+echo "IP address of this VM: $IP"
+
+sed -i "s|= \[\]|= \[ $CIDR \]|g" $iac_dir/sas-sample-input.tfvars
+
+# crunchydata or external PG database?
+if [ $postgres == "internal" ]; then
+  sed -i '/postgres_servers = {/,+2d' $iac_dir/sas-sample-input.tfvars
+fi
+
+# use a mirror or not?
+if [ $registry == "yes" ]; then
+  sed -i "/create_container_registry/d" $iac_dir/sas-sample-input.tfvars
+  sed -i "/container_registry_sku/i create_container_registry    = true" $iac_dir/sas-sample-input.tfvars
+fi
+
+sed -i "s/<prefix-value>/$prefix/g" $iac_dir/sas-sample-input.tfvars
+sed -i "s/<aws-location-value>/$location/g" $iac_dir/sas-sample-input.tfvars
+sed -i "s|~/.ssh/id_rsa.pub|/workspace/id_rsa.pub|g" $iac_dir/sas-sample-input.tfvars
+sed -i "s/{ }/{ $tag }/g" $iac_dir/sas-sample-input.tfvars
+
+# generate SSH key
+ssh-keygen -t rsa -q -f "$iac_dir/id_rsa" -N "" <<< y
+
+# verify results
+cat $iac_dir/sas-sample-input.tfvars 
+```
+
+
+### Build the Terraform plan file and create the cloud infrastructure
+
+Create the Terraform plan file.
+
+```shell
+docker run --rm \
+  --env-file $IACHOMEDIR/deployments/$cloudprovider/latest/.${cloudprovider}_docker_creds.env \
+  -v $iac_dir:/workspace:Z \
+  viya4-iac-$cloudprovider:$iac_tag \
+  plan -var-file /workspace/sas-sample-input.tfvars -out /workspace/terraform.plan
+```
+
+The command should end with the following output:
+
+```
+Saved the plan to: /workspace/terraform.plan
+
+To perform exactly these actions, run the following command to apply:
+    terraform apply "/workspace/terraform.plan"
+```
+
+Submit the plan file (build the cloud infrastructure). This will take a couple of minutes. You will be able to watch the progress on the shell (and in the AWS console).
+
+```shell
+docker run --rm \
+  --env-file $IACHOMEDIR/deployments/$cloudprovider/latest/.${cloudprovider}_docker_creds.env \
+  -v $iac_dir:/workspace:Z \
+  viya4-iac-$cloudprovider:$iac_tag \
+  apply --auto-approve -state /workspace/terraform.tfstate /workspace/terraform.plan
+```
+
