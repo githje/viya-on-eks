@@ -16,6 +16,7 @@ Let's briefly discuss the 3 steps:
 * **SAS Viya**. We'll deploy SAS Viya using the "manual" approach where you will prepare and submit the YAML manifest which triggers the software installation process. For this you will need to become familiar with the `kustomize` tool (https://kustomize.io/). `kustomize` allows you to take the manifest templates shipped by SAS and merge them with site-specific input which you have to provide.
 
 
+
 ## Using the Cloud9 IDE
 
 * After logging in to workshop studio (https://catalog.us-east-1.prod.workshops.aws/event/dashboard/en-US/workshop), click on the link in the left panel to open the AWS console
@@ -76,7 +77,9 @@ git clone https://github.com/githje/viya-on-eks.git
 You should now see a new folder named "viya-on-eks" in the file explorer on the left. Try to open the file README.md from this folder.
 
 
+
 ## Create the AWS cloud infrastructure
+
 
 ### Prepare building the Terraform plan file
 
