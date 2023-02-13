@@ -14,8 +14,8 @@ Let's briefly discuss the 3 steps:
     * cert-manager
     * metrics-server
 * **SAS Viya**. We'll deploy SAS Viya using the "manual" approach where you will prepare and submit the YAML manifest which triggers the software installation process. For this you will need to become familiar with the `kustomize` tool (https://kustomize.io/). `kustomize` allows you to take the manifest templates shipped by SAS and merge them with site-specific input which you have to provide.
-  
-  
+
+
 ## Using the Cloud9 IDE
 
 * After logging in to workshop studio (https://catalog.us-east-1.prod.workshops.aws/event/dashboard/en-US/workshop), click on the link in the left panel to open the AWS console
@@ -76,8 +76,7 @@ git clone https://github.com/githje/viya-on-eks.git
 You should now see a new folder named "viya-on-eks" in the file explorer on the left. Try to open the file README.md from this folder.
 
 
-
-## Create the AWS cloud infrastructure
+## 1. Create the AWS cloud infrastructure
 
 
 ### Prepare building the Terraform plan file
@@ -239,7 +238,7 @@ To perform exactly these actions, run the following command to apply:
     terraform apply "/workspace/terraform.plan"
 ```
 
-Submit the plan file (build the cloud infrastructure). This will take a couple of minutes. You will be able to watch the progress on the shell (and in the AWS console).
+Submit the plan file (build the cloud infrastructure). This will take around 20+ minutes. You will be able to watch the progress on the shell (and in the AWS console).
 
 ```shell
 docker run --rm \
@@ -248,4 +247,96 @@ docker run --rm \
   viya4-iac-$cloudprovider:$iac_tag \
   apply --auto-approve -state /workspace/terraform.tfstate /workspace/terraform.plan
 ```
+
+The command should end with the following output:
+
+```
+Apply complete! Resources: 100 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+autoscaler_account = "arn:aws:iam::622837347326:role/sas-viya-aws-cluster-autoscaler"
+cluster_api_mode = "public"
+...
+```
+
+
+### Validate that you can connect to the new EKS cluster
+
+```shell
+sudo chown $(id -u):$(id -g) $iac_dir/${prefix}-eks-kubeconfig.conf 
+sudo chmod 600 $iac_dir/${prefix}-eks-kubeconfig.conf
+
+export KUBECONFIG=$iac_dir/${prefix}-eks-kubeconfig.conf
+kubectl get nodes
+```
+
+The command output should look like this:
+
+```
+NAME                             STATUS   ROLES    AGE     VERSION
+ip-192-168-xx-xxx.ec2.internal   Ready    <none>   3m28s   v1.23.15-eks-49d8fe8
+ip-192-168-xx-xxx.ec2.internal   Ready    <none>   3m34s   v1.23.15-eks-49d8fe8
+ip-192-168-xx-xxx.ec2.internal   Ready    <none>   4m9s    v1.23.15-eks-49d8fe8
+ip-192-168-xx-xxx.ec2.internal   Ready    <none>   4m36s   v1.23.15-eks-49d8fe8
+ip-192-168-xx-xxx.ec2.internal   Ready    <none>   3m26s   v1.23.15-eks-49d8fe8
+ip-192-168-xx-xxx.ec2.internal   Ready    <none>   3m33s   v1.23.15-eks-49d8fe8
+```
+
+Also, check the EKS landing page in the AWS console (https://us-east-1.console.aws.amazon.com/eks/home?region=us-east-1#/clusters). And try this - just for fun (CTRL-C to exit).
+
+```shell
+k9s
+```
+
+![k9s](assets/aws2.jpg)
+
+This concludes the 1st step. We'll now deploy some required 3rd-party packages.
+
+
+## 2. Deploy required infrastructure components
+
+SAS Viya requires the nginx ingress controller (https://github.com/kubernetes/ingress-nginx), which is not installed yet. We'll install it using helm.
+
+```shell
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm repo update
+
+# list all versions
+# helm search repo ingress-nginx --versions
+
+# make nginx use host network (uses port 80 and 443)
+helm install ingress-nginx ingress-nginx/ingress-nginx --version 4.4.2 \
+    --set controller.hostNetwork=true,controller.service.type="",controller.kind=DaemonSet
+
+helm install nginx-ingress ingress-nginx/ingress-nginx --version 4.4.2 \
+    --namespace nginx \
+    --create-namespace \
+    --set controller.service.type=LoadBalancer
+
+# check version
+POD_NAME=$(kubectl -n nginx get pods -l app.kubernetes.io/name=ingress-nginx -o jsonpath='{.items[0].metadata.name}')
+kubectl -n nginx exec -it $POD_NAME -- /nginx-ingress-controller --version
+
+# get the ingress-class name, should return: nginx
+kubectl -n nginx get IngressClass -o yaml | yq .items[0].metadata.name
+
+# get the service details
+ELB_DNS=$(kubectl -n nginx get service nginx-ingress-ingress-nginx-controller -o yaml | \
+  yq .status.loadBalancer.ingress[0].hostname)
+
+echo "Hostname of LoadBalancer: $ELB_DNS"
+
+# quick check - this returns 404 (nginx default backend)
+curl -k https://$ELB_DNS
+```
+
+(Optional) Deploy a simple web application to test web-based access to the cluster
+
+```shell
+
+```
+
+
+## 3. Deploy SAS Viya
 
