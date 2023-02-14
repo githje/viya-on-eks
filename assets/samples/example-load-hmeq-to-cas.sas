@@ -5,7 +5,7 @@
 cas;
 caslib _all_ assign;
 
-data casdata.hmeq(promote=yes);
+data public.hmeq(promote=yes);
 	set sampsio.hmeq;
 run;
 
