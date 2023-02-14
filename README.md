@@ -406,7 +406,7 @@ NFS_SERVER_IP=$(cat ~/environment/iac-deploy/deployments/aws/latest/iac/terrafor
 echo "NFS Server IP addreess: $NFS_SERVER_IP"
 
 sed -i "s/namespace:.*/namespace: nfs/g" ./deploy/rbac.yaml ./deploy/deployment.yaml
-sed -i "s|/ifs/kubernetes|/nfsshare|g" deploy/deployment.yaml
+sed -i "s|/ifs/kubernetes|/export|g" deploy/deployment.yaml
 sed -i "s|10.3.243.101|$NFS_SERVER_IP|g" deploy/deployment.yaml
 sed -i 's|nfs-client|nfs-shared-storage|' deploy/class.yaml
 
