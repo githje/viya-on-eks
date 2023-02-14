@@ -65,6 +65,9 @@ sudo mv k9s /usr/local/bin/
 rm -f k9s_Linux_amd64.tar.gz README.md LICENSE
 
 k9s version
+
+# password manager
+sudo yum -y install kpcli
 ```
 
 Finally clone this repository
@@ -414,21 +417,18 @@ kubectl get sc
 
 ### LDAP server
 
-SAS Viya relies on external services for user authentication. This is often delegated to an Active Directory server, but a simple LDAP server with some local users will be sufficient for this workshop. We will deploy the LDAP server as a pod running on EKS.
+SAS Viya relies on external services for user authentication. This is often delegated to an Active Directory server, but a simple LDAP server with some local users will be sufficient for this workshop. The next step deploys an instance of a LDAP server based on OpenLDAP (https://www.openldap.org/) as a pod running on EKS. Note that his LDAP server is not exposed outside the EKS cluster.
 
 ```shell
-cd ~
-unzip openldap.zip
-mv 2021-deploy-openldap/* .
-rm -rf 2021-deploy-openldap/
+cd ~/environment/viya-on-eks/
+unzip ~/environment/viya-on-eks/assets/openldap.zip
 
 cd openldap
-
 kustomize build ./no_TLS/ -o site.yaml
-kubectl apply -f site.yaml
+kubectl -n default apply -f site.yaml
 
 # check (repeat command until pod is running)
-kubectl get all -l "app=viya4-openldap-server"
+kubectl -n default get all -l "app=viya4-openldap-server"    
 ```
 
 The output of the last command should look like this:
@@ -442,17 +442,111 @@ replicaset.apps/viya4-openldap-server-779b48868d   1         1         1       8
 ```
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 ## 3. Deploy SAS Viya
 
+This is the final step of the workshop. We will prepare and submit a YAML manifest to deploy SAS Viya on the EKS cluster. We will use the kustomize tool which merges the YAML templates provided by SAS with our own, site-specific, modifications.
+
+### Prepare deployment
+
+Create a folder structure for building the SAS Viya YAML manifest:
+
+```shell
+mkdir -p /home/ec2-user/environment/viya-deploy/site-config/patches
+mkdir -p /home/ec2-user/environment/viya-deploy/site-config/security
+```
+
+As a first step, we need to download the YAML templates provided by SAS. These deployment assets contain the SAS license, so they should be handled with care. For the workshop we've prepared a set of deployment assets which need to be downloaded first. The download is protected with a SSH key which is encrypted using gpg.
+
+```shell
+# decrypt the SSH key, the password will be given during the workshop
+cd /home/ec2-user/environment/viya-on-eks/assets
+gpg -o transfer-ssh.key -d transfer-ssh.key.gpg
+chmod 400 transfer-ssh.key
+
+# validate MD5 checksum
+echo "15c36a8cd75e2ba2d7cbcd8c9c2b77b9  transfer-ssh.key" | md5sum -c -
+```
+
+The last command should generate this output:
+
+```
+transfer-ssh.key: OK
+```
+
+With the private SSH key we can now download the deployment assets.
+
+```shell
+cd /home/ec2-user/environment/viya-deploy
+
+# open sftp shell
+sftp -r -i ~/environment/viya-on-eks/assets/transfer-ssh.key \
+    sas@s-88082dde18b94d429.server.transfer.eu-central-1.amazonaws.com
+    
+# download file
+ls
+get SASViyaV4_stable_2023.01_deployment.tgz SASViyaV4_stable_2023.01_deployment.tgz
+quit
+```
+
+Validate checksum and extract the archive:
+
+```yaml
+# validate checksum
+echo "9142fc85135b51e0838112e058b33a5d  SASViyaV4_stable_2023.01_deployment.tgz" | md5sum -c -
+
+# extract
+tar xvzf SASViyaV4_stable_2023.01_deployment.tgz
+
+# check
+ls -lisa
+```
+
+The last command should generate this output:
+
+```
+total 952
+drwxrwxr-x 8 ec2-user ec2-user    140 Feb 13 12:23 sas-bases
+-rwxr--r-- 1 ec2-user ec2-user 972494 Feb 13 12:23 SASViyaV4_stable_2023.01_deployment.tgz
+drwxrwxr-x 4 ec2-user ec2-user     38 Feb 13 12:52 site-config
+```
+
+
+### Add (k|c)ustomizations
+
+See: https://go.documentation.sas.com/doc/en/itopscdc/v_036/itopswlcm/home.htm
+
+For this workshop we will only apply the minimum amount of sites-specific patches. Most patches are already prepared and you only need to modify a few of them.
+
+```yaml
+configMapGenerator:
+- name: ingress-input
+  behavior: merge
+  literals:
+  - INGRESS_HOST={{ INGRESS-DNS }}
+- name: sas-shared-config
+  behavior: merge
+  literals:
+  - SAS_SERVICES_URL=https://{{ INGRESS-DNS }}
+```
+
+
+
+```yaml
+config:
+    application:
+        sas.identities.providers.ldap.connection:
+            host: '{{ NFS-SERVER-IP }}'
+(...)
+        sas.identities:
+            administrator: '{{ SAS-ADMINISTRATOR-USERID }}'
+```
+
+```yaml
+spec:
+  storageClassName: {{ RWX-STORAGE-CLASS }}
+```
+
+```shell
+cd $deploy
+cp sas-bases/examples/security/openssl-generated-ingress-certificate.yaml site-config/security
+```

@@ -1,0 +1,47 @@
+namespace: viya4
+
+resources:
+- sas-bases/base
+- sas-bases/overlays/network/networking.k8s.io
+- site-config/security/openssl-generated-ingress-certificate.yaml # generate SSL cert
+- sas-bases/overlays/cas-server                                # SMP CAS
+- sas-bases/overlays/internal-elasticsearch                    # OpenDistro
+- sas-bases/overlays/crunchydata/postgres-operator             # crunchydata
+- sas-bases/overlays/postgres/platform-postgres                # crunchydata
+- sas-bases/overlays/cas-server/auto-resources                 # CAS uses nodepool
+
+configurations:
+- sas-bases/overlays/required/kustomizeconfig.yaml
+
+transformers:
+- sas-bases/overlays/internal-elasticsearch/sysctl-transformer.yaml                     # OpenDistro
+- sas-bases/overlays/required/transformers.yaml
+- sas-bases/overlays/cas-server/auto-resources/remove-resources.yaml                    # CAS uses nodepool
+- sas-bases/overlays/internal-elasticsearch/internal-elasticsearch-transformer.yaml     # OpenDistro
+
+components:
+- sas-bases/components/crunchydata/internal-platform-postgres
+- sas-bases/components/security/core/base/front-door-tls
+- sas-bases/components/security/network/networking.k8s.io/ingress/nginx.ingress.kubernetes.io/front-door-tls
+
+patches:
+- path: site-config/patches/rwx-storage-class.yaml
+  target:
+    kind: PersistentVolumeClaim
+    annotationSelector: sas.com/component-name in (sas-backup-job,sas-data-quality-services,sas-commonfiles,sas-cas-operator,sas-pyconfig)
+
+secretGenerator:
+- name: sas-consul-config
+  behavior: merge
+  files:
+  - SITEDEFAULT_CONF=sitedefault.yaml
+
+configMapGenerator:
+- name: ingress-input
+  behavior: merge
+  literals:
+  - INGRESS_HOST={{ INGRESS-DNS }}
+- name: sas-shared-config
+  behavior: merge
+  literals:
+  - SAS_SERVICES_URL=https://{{ INGRESS-DNS }}
