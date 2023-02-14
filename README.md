@@ -517,6 +517,27 @@ See: https://go.documentation.sas.com/doc/en/itopscdc/v_036/itopswlcm/home.htm
 
 For this workshop we will only apply the minimum amount of sites-specific patches. Most patches are already prepared and you only need to modify a few of them.
 
+Copy the prepared content to the deployment directory:
+
+```shell
+cd /home/ec2-user/environment/viya-on-eks/assets
+cp -r site-config/ /home/ec2-user/environment/viya-deploy
+```
+
+You should now be able to view the files in the site-config directory from the file explorer panel.
+
+![View deployment assets](assets/aws3.jpg)
+
+
+#### kustomization.yaml
+
+Double click to open `kustomization.yaml`. You need to replace the variable `{{ INGRESS-DNS }}` 2 times with the DNS name of the AWS Load Balancer.
+
+```shell
+# retrieve DNS name
+echo "Hostname of LoadBalancer: $ELB_DNS"
+```
+
 ```yaml
 configMapGenerator:
 - name: ingress-input
@@ -530,15 +551,47 @@ configMapGenerator:
 ```
 
 
+#### sitedefault.yaml
+
+Double click to open `sitedefault.yaml`. You need to replace the variables `{{ LDAP-SERVER-DNS }}` and `{{ SAS-ADMINISTRATOR-USERID }}`.
+
+```shell
+# retrieve LDAP DNS name (cluster-internal DNS name)
+# the internal DNS name is generated like this:
+# <name-of-service>.<namespace>.svc.cluster.local
+
+# get name of services (check the openldap service)
+kubectl get svc -n default
+
+# output:
+# NAME                     TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)   AGE
+# echoserver-svc           ClusterIP   10.100.184.158   <none>        80/TCP    10h
+# kubernetes               ClusterIP   10.100.0.1       <none>        443/TCP   13h
+# viya4-openldap-service   ClusterIP   10.100.45.156    <none>        389/TCP   3h3m
+
+echo "DNS name of OpenLDAP server is: viya4-openldap-service.default.svc.cluster.local"
+```
+
+Use `viyademo01` as the SAS Administrator User.
 
 ```yaml
 config:
     application:
         sas.identities.providers.ldap.connection:
-            host: '{{ NFS-SERVER-IP }}'
+            host: '{{ LDAP-SERVER-DNS }}'
 (...)
         sas.identities:
             administrator: '{{ SAS-ADMINISTRATOR-USERID }}'
+```
+
+
+#### patches/rwx-storage-class.yaml
+
+Double click to open `patches/rwx-storage-class.yaml`. You need to replace the variable `{{ RWX-STORAGE-CLASS }}` with `nfs-shared-storage`. 
+
+```shell
+# confirm name of RWX storage class
+kubectl get sc
 ```
 
 ```yaml
@@ -546,7 +599,32 @@ spec:
   storageClassName: {{ RWX-STORAGE-CLASS }}
 ```
 
+
+#### security/openssl-generated-ingress-certificate.yaml
+
+This file does not yet exist. Create it from a SAS-provided template:
+
 ```shell
-cd $deploy
+cd /home/ec2-user/environment/viya-deploy
 cp sas-bases/examples/security/openssl-generated-ingress-certificate.yaml site-config/security
+
+# validate content (nothing to change)
+cat site-config/security/openssl-generated-ingress-certificate.yaml
+```
+
+
+### Build and deploy
+
+We can now finally create the master YAML manifest and submit it to EKS.
+
+```shell
+cd /home/ec2-user/environment/viya-deploy
+kustomize build -o site.yaml
+
+kubectl apply --selector="sas.com/admin=cluster-api" --server-side --force-conflicts -f site.yaml
+
+kubectl apply --selector="sas.com/admin=cluster-wide" -f site.yaml
+kubectl apply --selector="sas.com/admin=cluster-local" -f site.yaml --prune
+kubectl apply --selector="sas.com/admin=namespace" -f site.yaml --prune
+
 ```

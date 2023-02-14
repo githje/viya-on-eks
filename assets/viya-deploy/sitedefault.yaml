@@ -1,7 +1,7 @@
 config:
     application:
         sas.identities.providers.ldap.connection:
-            host: '{{ NFS-SERVER-IP }}'
+            host: '{{ LDAP-SERVER-DNS }}'
             port: '389'
             url: 'ldap://${sas.identities.providers.ldap.connection.host}:${sas.identities.providers.ldap.connection.port}'
             userDN: 'cn=admin,dc=example,dc=org'
