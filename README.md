@@ -10,6 +10,7 @@ Let's briefly discuss the 3 steps:
     * and of course all the "glue" components required for this to work (networking, roles etc.)
 
 * **Required packages**. SAS Viya requires some additional components to be able to run on Kubernetes. We'll need to deploy them before we can continue. We will install these components:
+    * EBS CSI driver
     * nginx ingress controller
     * NFS storage provisioner
     * metrics-server
@@ -317,52 +318,63 @@ We need to repeat the EBS exercise you just did in the morning for this cluster.
 ```shell
 cd ~/environment/viya-on-eks/
 
-export EBS_CSI_POLICY_NAME="Amazon_EBS_CSI_Driver"
-
-# create the IAM policy
-aws iam create-policy \
-  --region ${location} \
-  --policy-name ${EBS_CSI_POLICY_NAME} \
-  --policy-document file://~/environment/viya-on-eks/assets/ebs-csi-policy.json
-
-# export the policy ARN as a variable
-export EBS_CSI_POLICY_ARN=$(aws --region ${location} iam list-policies \
-  --query 'Policies[?PolicyName==`'$EBS_CSI_POLICY_NAME'`].Arn' --output text)
-
-echo $EBS_CSI_POLICY_ARN
-
-# Create an IAM OIDC provider for your cluster
-eksctl utils associate-iam-oidc-provider \
-  --region=$location \
-  --cluster=$prefix-eks \
-  --approve
-
-# create a service account
-eksctl create iamserviceaccount \
-  --cluster $prefix-eks \
-  --name ebs-csi-controller-irsa \
-  --namespace kube-system \
-  --attach-policy-arn $EBS_CSI_POLICY_ARN \
-  --override-existing-serviceaccounts \
-  --approve
+# find ARN of IAM user for EBS CSI
+EBS_CSI_ARN=$(cat ~/environment/iac-deploy/deployments/aws/latest/iac/terraform.tfstate | \
+    jq -r .outputs.ebs_csi_account.value)
+echo "The EBS CSI User's ARN is: $EBS_CSI_ARN"
 
 # add the aws-ebs-csi-driver as a helm repo
 helm repo add aws-ebs-csi-driver https://kubernetes-sigs.github.io/aws-ebs-csi-driver
 
+# install the CSI driver
 helm upgrade --install aws-ebs-csi-driver \
-  --version=1.2.4 \
   --namespace kube-system \
-  --set serviceAccount.controller.create=false \
-  --set serviceAccount.snapshot.create=false \
-  --set enableVolumeScheduling=true \
-  --set enableVolumeResizing=true \
-  --set enableVolumeSnapshot=true \
-  --set serviceAccount.snapshot.name=ebs-csi-controller-irsa \
-  --set serviceAccount.controller.name=ebs-csi-controller-irsa \
+  --set controller.serviceAccount.create=true \
+  --set controller.serviceAccount.name=ebs-csi-controller-sa \
+  --set controller.serviceAccount.annotations."eks\.amazonaws\.com\/role-arn"="arn:aws:iam::622837347326:role\/sas-viya-aws-ebs-csi-role" \
   aws-ebs-csi-driver/aws-ebs-csi-driver
 
-kubectl -n kube-system rollout status deployment ebs-csi-controller
+# check
+kubectl get pod -n kube-system \
+  -l "app.kubernetes.io/name=aws-ebs-csi-driver,app.kubernetes.io/instance=aws-ebs-csi-driver"
 
+kubectl -n kube-system rollout status deployment ebs-csi-controller
+```
+
+The check commands should show this output:
+
+```
+NAME                                  READY   STATUS    RESTARTS   AGE
+ebs-csi-controller-5767cd476f-cb727   6/6     Running   0          38s
+ebs-csi-controller-5767cd476f-sthmt   6/6     Running   0          38s
+ebs-csi-node-7tpx5                    3/3     Running   0          38s
+ebs-csi-node-82cbv                    3/3     Running   0          38s
+ebs-csi-node-9glr4                    3/3     Running   0          38s
+ebs-csi-node-fdhdw                    3/3     Running   0          38s
+ebs-csi-node-hvtph                    3/3     Running   0          38s
+ebs-csi-node-ltc5z                    3/3     Running   0          38s
+
+deployment "ebs-csi-controller" successfully rolled out
+```
+
+With the driver in place, we need to create the storage class and set it to be the default.
+
+```shell
+kubectl apply -f ~/environment/viya-on-eks/assets/ebs-gp2-sc.yaml
+
+kubectl patch storageclass ebs-gp2-sc -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+kubectl patch storageclass gp2 -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'
+
+# check
+kubectl get storageclass
+```
+
+The last command should show this output (note the "default"):
+
+```
+NAME                   PROVISIONER             RECLAIMPOLICY   VOLUMEBINDINGMODE      ALLOWVOLUMEEXPANSION   AGE
+ebs-gp2-sc (default)   ebs.csi.aws.com         Delete          WaitForFirstConsumer   false                  115m
+gp2                    kubernetes.io/aws-ebs   Delete          WaitForFirstConsumer   false                  148m
 ```
 
 
@@ -377,10 +389,7 @@ helm repo update
 # list all versions
 # helm search repo ingress-nginx --versions
 
-# make nginx use host network (uses port 80 and 443)
-helm install ingress-nginx ingress-nginx/ingress-nginx --version 4.4.2 \
-    --set controller.hostNetwork=true,controller.service.type="",controller.kind=DaemonSet
-
+# install nginx (will create AWS load balancer)
 helm install nginx-ingress ingress-nginx/ingress-nginx --version 4.4.2 \
     --namespace nginx \
     --create-namespace \
@@ -413,7 +422,7 @@ kubectl -n default apply -f ~/environment/viya-on-eks/assets/test-deploy-http-we
 # wait until the pod is "running"
 kubectl -n default get all
 
-# checl
+# check
 echo "Point your browser to: http://$ELB_DNS/echoserver"
 ```
 
@@ -493,7 +502,7 @@ kustomize build ./no_TLS/ -o site.yaml
 kubectl -n default apply -f site.yaml
 
 # check (repeat command until pod is running)
-kubectl -n default get all -l "app=viya4-openldap-server"    
+kubectl -n default get all -l "app=viya4-openldap-server"
 ```
 
 The output of the last command should look like this:
@@ -707,9 +716,26 @@ One way of checking if the deployment has finished is to monitor the state of th
 watch -n 5 "kubectl -n viya4 get deploy sas-readiness"
 ```
 
-Once the deployment is complete, open your browser and navigate to this URL:
+The output will show the READY state of "1/1" after some time:
 
-https://ac491ce5b81e343e58057f0ebf8bd3af-1357274724.us-east-1.elb.amazonaws.com
+```
+NAME            READY   UP-TO-DATE   AVAILABLE   AGE
+sas-readiness   1/1     1            1           17m
+```
 
-And log in using `viyademo01` / `lnxsas`
+Once the deployment is complete, open your browser and navigate to the URL returned by this command:
 
+```shell
+echo "SAS Viya - SAS Drive: https://$ELB_DNS"
+```
+
+Since we're using self-signed certificates, your browser will display a warning. Accept the risk and continue. Log in using these credentials:
+
+```
+Username: viyademo01
+Password: lnxsas
+```
+
+You'll then be taken to the SAS Drive application homepage from where you can start exploring the Viya platform. 
+
+Have fun!
