@@ -36,7 +36,12 @@ helm list -A
 # verify that the docker runtime is installed
 docker ps
 
-# verify that kubectl is installed
+# update the installed version of kubectl
+curl -O https://s3.us-west-2.amazonaws.com/amazon-eks/1.23.15/2023-01-11/bin/linux/amd64/kubectl
+chmod 775 kubectl 
+sudo rm -f  /usr/local/bin/kubectl 
+sudo mv kubectl /usr/local/bin/
+
 kubectl version
 
 # kustomize
@@ -521,7 +526,7 @@ Copy the prepared content to the deployment directory:
 
 ```shell
 cd /home/ec2-user/environment/viya-on-eks/assets
-cp -r site-config/ /home/ec2-user/environment/viya-deploy
+cp -r viya-deploy/ /home/ec2-user/environment/
 ```
 
 You should now be able to view the files in the site-config directory from the file explorer panel.
@@ -621,10 +626,28 @@ We can now finally create the master YAML manifest and submit it to EKS.
 cd /home/ec2-user/environment/viya-deploy
 kustomize build -o site.yaml
 
+kubectl create ns viya4
 kubectl apply --selector="sas.com/admin=cluster-api" --server-side --force-conflicts -f site.yaml
 
 kubectl apply --selector="sas.com/admin=cluster-wide" -f site.yaml
 kubectl apply --selector="sas.com/admin=cluster-local" -f site.yaml --prune
 kubectl apply --selector="sas.com/admin=namespace" -f site.yaml --prune
 
+# monitor progress of deployment
+k9s -n viya4
 ```
+
+![Monitor deployment progress](assets/aws4.jpg)
+
+One way of checking if the deployment has finished is to monitor the state of the `sas-readiness` service:
+
+```shell
+watch -n 5 "kubectl -n viya4 get deploy sas-readiness"
+```
+
+Once the deployment is complete, open your browser and navigate to this URL:
+
+https://ac491ce5b81e343e58057f0ebf8bd3af-1357274724.us-east-1.elb.amazonaws.com
+
+And log in using `viyademo01` / `lnxsas`
+
