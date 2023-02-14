@@ -520,7 +520,7 @@ drwxrwxr-x 4 ec2-user ec2-user     38 Feb 13 12:52 site-config
 
 See: https://go.documentation.sas.com/doc/en/itopscdc/v_036/itopswlcm/home.htm
 
-For this workshop we will only apply the minimum amount of sites-specific patches. Most patches are already prepared and you only need to modify a few of them.
+For this workshop we will only apply the minimum amount of site-specific patches. Most patches are already prepared and you only need to modify a few of them.
 
 Copy the prepared content to the deployment directory:
 
@@ -529,7 +529,7 @@ cd /home/ec2-user/environment/viya-on-eks/assets
 cp -r viya-deploy/ /home/ec2-user/environment/
 ```
 
-You should now be able to view the files in the site-config directory from the file explorer panel.
+You should now be able to view the files in the `site-config` directory from the file explorer panel.
 
 ![View deployment assets](assets/aws3.jpg)
 
