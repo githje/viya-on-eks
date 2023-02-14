@@ -168,8 +168,8 @@ Create the credentials file needed by Terraform.
 
 ```shell
 if [ ! -z $IACHOMEDIR/deployments/$cloudprovider/latest/.${cloudprovider}_docker_creds.env ]; then
-echo "[INFO:] Creating credentials file"
-cat << EOF > $IACHOMEDIR/deployments/$cloudprovider/latest/.${cloudprovider}_docker_creds.env
+  echo "[INFO:] Creating credentials file"
+  cat << EOF > $IACHOMEDIR/deployments/$cloudprovider/latest/.${cloudprovider}_docker_creds.env
  TF_VAR_aws_access_key_id=$APPID
  TF_VAR_aws_secret_access_key=$PASSWORD
 EOF
@@ -278,6 +278,9 @@ sudo chown $(id -u):$(id -g) $iac_dir/${prefix}-eks-kubeconfig.conf
 sudo chmod 600 $iac_dir/${prefix}-eks-kubeconfig.conf
 
 export KUBECONFIG=$iac_dir/${prefix}-eks-kubeconfig.conf
+mv ~/.kube/config ~/.kube/config.old
+cp $iac_dir/${prefix}-eks-kubeconfig.conf ~/.kube/config
+
 kubectl get nodes
 ```
 
@@ -305,6 +308,34 @@ This concludes the 1st step. We'll now deploy some required 3rd-party packages.
 
 
 ## 2. Deploy required infrastructure components
+
+
+### AWS EBS CSI driver
+
+We need to repeat the EBS exercise you just did in the morning for this cluster. Let's deploy the AWS EBS CSI driver.
+
+```shell
+cd ~/environment/viya-on-eks/
+
+export EBS_CSI_POLICY_NAME="Amazon_EBS_CSI_Driver"
+
+mkdir ${HOME}/environment/ebs_statefulset
+cd ${HOME}/environment/ebs_statefulset
+
+# download the IAM policy document
+curl -sSL -o ebs-csi-policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-ebs-csi-driver/master/docs/example-iam-policy.json
+
+# Create the IAM policy
+aws iam create-policy \
+  --region ${AWS_REGION} \
+  --policy-name ${EBS_CSI_POLICY_NAME} \
+  --policy-document file://${HOME}/environment/ebs_statefulset/ebs-csi-policy.json
+
+# export the policy ARN as a variable
+export EBS_CSI_POLICY_ARN=$(aws --region ${AWS_REGION} iam list-policies --query 'Policies[?PolicyName==`'$EBS_CSI_POLICY_NAME'`].Arn' --output text)
+
+
+```
 
 
 ### nginx ingress controller
@@ -416,6 +447,7 @@ kubectl apply -f deploy/class.yaml
 kubectl apply -f deploy/deployment.yaml
 
 # check (nfs-shared-storage)
+kubectl -n nfs get all
 kubectl get sc
 ```
 
@@ -627,6 +659,8 @@ cd /home/ec2-user/environment/viya-deploy
 kustomize build -o site.yaml
 
 kubectl create ns viya4
+kubectl config set-context --current --namespace=viya4
+
 kubectl apply --selector="sas.com/admin=cluster-api" --server-side --force-conflicts -f site.yaml
 
 kubectl apply --selector="sas.com/admin=cluster-wide" -f site.yaml
