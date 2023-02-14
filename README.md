@@ -71,9 +71,6 @@ sudo mv k9s /usr/local/bin/
 rm -f k9s_Linux_amd64.tar.gz README.md LICENSE
 
 k9s version
-
-# password manager
-sudo yum -y install kpcli
 ```
 
 Finally clone this repository
