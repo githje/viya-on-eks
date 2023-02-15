@@ -8,7 +8,7 @@ export deployment_tag=6.1.0
 export backup_date=$(date +%s)
 export cloudprovider=aws
 
-helm uninstall ingress-nginx -n nginx
+helm uninstall nginx-ingress -n nginx
 
 docker run --rm \
   --env-file $IACHOMEDIR/deployments/$cloudprovider/latest/.${cloudprovider}_docker_creds.env \
