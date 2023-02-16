@@ -324,11 +324,15 @@ echo "The EBS CSI User's ARN is: $EBS_CSI_ARN"
 helm repo add aws-ebs-csi-driver https://kubernetes-sigs.github.io/aws-ebs-csi-driver
 
 # install the CSI driver
+# CAREFUL, DO NOT COPY&PASTE
+# replace the role ARN with the one valid for
+# your environment. Note you have to escape
+# the / as shown below.
 helm upgrade --install aws-ebs-csi-driver \
   --namespace kube-system \
   --set controller.serviceAccount.create=true \
   --set controller.serviceAccount.name=ebs-csi-controller-sa \
-  --set controller.serviceAccount.annotations."eks\.amazonaws\.com\/role-arn"="arn:aws:iam::622837347326:role\/sas-viya-aws-ebs-csi-role" \
+  --set controller.serviceAccount.annotations."eks\.amazonaws\.com\/role-arn"="arn:aws:iam::111222333444:role\/sas-viya-aws-ebs-csi-role" \
   aws-ebs-csi-driver/aws-ebs-csi-driver
 
 # check
