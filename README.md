@@ -10,11 +10,11 @@ Let's briefly discuss the 3 steps:
     * and of course all the "glue" components required for this to work (networking, roles etc.)
 
 * **Required packages**. SAS Viya requires some additional components to be able to run on Kubernetes. We'll need to deploy them before we can continue. We will install these components:
-    * EBS CSI driver
-    * nginx ingress controller
-    * NFS storage provisioner
-    * metrics-server
-    * LDAP server
+    * RWO storage, provided by the AWS EBS CSI driver
+    * RWX storage, provided by a NFS storage provisioner
+    * Ingress Controller, provided by nginx
+    * Resource usage metrics, provided by metrics-server
+    * Authentication provided, provided by a local LDAP server
 
 * **SAS Viya**. We'll deploy SAS Viya using the "manual" approach where you will prepare and submit the YAML manifest which triggers the software installation process. For this you will need to become familiar with the `kustomize` tool (https://kustomize.io/). `kustomize` allows you to take the manifest templates shipped by SAS and merge them with site-specific input which you have to provide.
 
