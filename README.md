@@ -563,12 +563,9 @@ get SASViyaV4_stable_2023.01_deployment.tgz SASViyaV4_stable_2023.01_deployment.
 quit
 ```
 
-Validate checksum and extract the archive:
+Extract the archive and check the contents:
 
 ```yaml
-# validate checksum
-echo "9142fc85135b51e0838112e058b33a5d  SASViyaV4_stable_2023.01_deployment.tgz" | md5sum -c -
-
 # extract
 tar xvzf SASViyaV4_stable_2023.01_deployment.tgz
 
