@@ -530,6 +530,13 @@ mkdir -p /home/ec2-user/environment/viya-deploy/site-config/patches
 mkdir -p /home/ec2-user/environment/viya-deploy/site-config/security
 ```
 
+At this point you need to decide which SAS licence (a.k.a the "deployment assets") you are intending to use. Only use one of the 2 options:
+
+* You can download the deployment assets provided by SAS
+* You can upload your own deployment assets to the Cloud9 workspace
+
+#### Using the SAS-provided deployment assets
+
 As a first step, we need to download the YAML templates provided by SAS. These deployment assets contain the SAS license, so they should be handled with care. For the workshop we've prepared a set of deployment assets which need to be downloaded first. The download is protected with a SSH key which is encrypted using gpg.
 
 ```shell
@@ -562,6 +569,36 @@ ls
 get SASViyaV4_stable_2023.01_deployment.tgz SASViyaV4_stable_2023.01_deployment.tgz
 quit
 ```
+
+#### Using your own deployment assets
+
+You should have received an email from SAS containing your SAS license number. This enables you to download the deployment assets from the SAS order portal at https://my.sas.com.
+
+* Navigate to https://my.sas.com
+* Create a profile if needed (1st time visit)
+* Click on "My Orders" on the navigation menu on the left side
+* Pick your order from the list (the order number should match the value in your email)
+* From the details page, click on "Downloads"
+* Select "Stable" as the Cadence
+* Select "2023.01" as the Version
+* From the list, check "Deployment Assets" 
+* Click on the "Download" button
+
+![my.sas.com Portal](assets/aws5.jpg)
+
+Next, upload the archive to the cloud environment into this folder:
+
+```
+/home/ec2-user/environment/viya-deploy
+```
+
+Also, rename the file like this:
+
+```
+SASViyaV4_stable_2023.01_deployment.tgz
+```
+
+#### Next steps once the deployment assets are available
 
 Extract the archive and check the contents:
 
